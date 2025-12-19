@@ -31,6 +31,22 @@ def weights_init_classifier(m):
         if m.bias:
             nn.init.constant_(m.bias, 0.0)
 
+class TemporalAttentionPooling(nn.Module):
+    def __init__(self, dim, hidden_dim=None):
+        super().__init__()
+        hidden_dim = hidden_dim or dim // 2
+        self.attn_mlp = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, 1)
+        )
+
+    def forward(self, x):  # x: [B, T, D]
+        attn_scores = self.attn_mlp(x)  # [B, T, 1]
+        attn_weights = F.softmax(attn_scores, dim=1)  # [B, T, 1]
+        x_pooled = torch.sum(x * attn_weights, dim=1)  # [B, D]
+        return x_pooled
+
 
 class TextEncoder(nn.Module):
     def __init__(self, clip_model):
@@ -92,7 +108,8 @@ class build_transformer(nn.Module):
         self.w_resolution = int((cfg.INPUT.SIZE_TRAIN[1]-16)//cfg.MODEL.STRIDE_SIZE[1] + 1)
         self.vision_stride_size = cfg.MODEL.STRIDE_SIZE[0]
         clip_model = load_clip_to_cpu(self.model_name, self.h_resolution, self.w_resolution, self.vision_stride_size, cfg)
-        clip_model.to("cuda")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        clip_model.to(device)
 
         self.image_encoder = clip_model.visual
         self.cv_embed = None
@@ -102,10 +119,26 @@ class build_transformer(nn.Module):
             self.cv_embed = nn.Parameter(torch.zeros(self.cv_embed_deep, self.cv_embed_len, camera_num, self.in_planes))
             trunc_normal_(self.cv_embed, std=.02)
 
+        if self.use_learnable_prompt:
+            print("use learnable prompt")
+            self.prompt_learner = PromptLearner_Learnable(
+                num_classes,
+                clip_model.dtype,
+                clip_model.token_embedding,
+                self.learnable_prompt_len)
+        else:
+            print("not use learnable prompt")
+            self.prompt_learner = PromptLearner_base(num_classes, clip_model.dtype, clip_model.token_embedding)
         self.text_encoder = TextEncoder(clip_model)
-
-
-
+        
+        # attention pooling params
+        self.tap_img_feature_last = TemporalAttentionPooling(dim=self.in_planes)
+        self.tap_img_feature = TemporalAttentionPooling(dim=self.in_planes)
+        self.tap_img_feature_proj = TemporalAttentionPooling(dim=self.in_planes_proj)
+        self.tap_cls_f_sp = TemporalAttentionPooling(dim=self.in_planes)
+        self.tap_cls_f_tp = TemporalAttentionPooling(dim=self.in_planes)
+        self.tap_video = TemporalAttentionPooling(dim=self.in_planes_proj)
+        
     def forward(self, x = None, label=None, get_image = False, get_text = False, cam_label= None, view_label=None):
         if get_text == True:
             prompts = self.prompt_learner(label) 
@@ -144,38 +177,27 @@ class build_transformer(nn.Module):
             img_feature_proj = image_features_proj[:, 0]
 
         img_feature_last = einops.rearrange(img_feature_last, '(b t) d -> b t d', b=batch)
-        img_feature_last = torch.mean(img_feature_last, dim=1)
+        img_feature_last = self.tap_img_feature_last(img_feature_last) 
         img_feature = einops.rearrange(img_feature, '(b t) d -> b t d', b=batch)
-        img_feature = torch.mean(img_feature, dim=1)
+        img_feature = self.tap_img_feature(img_feature) 
         img_feature_proj = einops.rearrange(img_feature_proj, '(b t) d -> b t d', b=batch)
-        img_feature_proj = torch.mean(img_feature_proj, dim=1)
+        img_feature_proj = self.tap_img_feature_proj(img_feature_proj)
 
-        feat = self.bottleneck(img_feature) 
-        feat_proj = self.bottleneck_proj(img_feature_proj) 
-        
         if self.training:
+            feat = self.bottleneck(img_feature)
+            feat_proj = self.bottleneck_proj(img_feature_proj)
             cls_score = self.classifier(feat)
             cls_score_proj = self.classifier_proj(feat_proj)
             return [cls_score, cls_score_proj], [img_feature_last, img_feature, img_feature_proj], img_feature_proj
 
         else:
-            if self.neck_feat == 'after':
-                return torch.cat([feat, feat_proj], dim=1)
-            else:
-                return torch.cat([img_feature, img_feature_proj], dim=1)
+            return torch.cat([img_feature, img_feature_proj], dim=1)
 
 
     def load_param(self, trained_path):
         param_dict = torch.load(trained_path)
         for i in param_dict:
-            if i in self.state_dict().keys():
-                try:
-                    self.state_dict()[i.replace('module.', '')].copy_(param_dict[i])
-                except Exception as e:
-                    print(i)
-                finally:
-                    continue
-
+            self.state_dict()[i.replace('module.', '')].copy_(param_dict[i])
         print('Loading pretrained model from {}'.format(trained_path))
 
     def load_param_finetune(self, model_path):
@@ -183,7 +205,6 @@ class build_transformer(nn.Module):
         for i in param_dict:
             self.state_dict()[i].copy_(param_dict[i])
         print('Loading pretrained model for finetuning from {}'.format(model_path))
-
 
 
 def make_model(cfg, num_class, camera_num, view_num):

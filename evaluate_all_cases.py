@@ -499,7 +499,7 @@ def main():
         print(f"\nTotal evaluation time: {timedelta(seconds=int(total_elapsed))}")
         
         # Generate ranking CSV file with all gallery results
-        csv_output_path = 'output/cross_attn/detreidx/alpha/256/evaluation_rankings_all_galleries.csv'
+        csv_output_path = 'output/evaluation_rankings_all_galleries_epoch60_aug.csv'
         os.makedirs(os.path.dirname(csv_output_path), exist_ok=True)
         generate_ranking_csv(results, output_path=csv_output_path)
         
@@ -536,4 +536,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

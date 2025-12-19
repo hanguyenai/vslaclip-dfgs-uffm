@@ -98,7 +98,7 @@ def do_train_stage2(cfg,
         loss_meter.reset()
         acc_meter.reset()
         evaluator.reset()
-
+        
         scheduler.step()
 
         model.train()

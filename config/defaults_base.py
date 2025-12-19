@@ -46,7 +46,7 @@ _C.MODEL.ID_LOSS_WEIGHT = 1.0
 _C.MODEL.TRIPLET_LOSS_WEIGHT = 1.0
 _C.MODEL.I2T_LOSS_WEIGHT = 1.0
 _C.MODEL.I2T_T2I_LOSS_WEIGHT = 1.0
-
+_C.MODEL.PCL_LOSS_WEIGHT = 0.5
 _C.MODEL.METRIC_LOSS_TYPE = 'triplet'
 # If train with multi-gpu ddp mode, options: 'True', 'False'
 _C.MODEL.DIST_TRAIN = False

@@ -70,7 +70,7 @@ class ToTensor(object):
         elif pic.mode == 'I;16':
             img = torch.from_numpy(np.array(pic, np.int16, copy=False))
         else:
-            img = torch.ByteTensor(torch.ByteStorage.from_buffer(pic.tobytes()))
+            img = torch.as_tensor(np.array(pic), dtype=torch.uint8)
         # PIL image mode: 1, L, P, I, F, RGB, YCbCr, RGBA, CMYK
         if pic.mode == 'YCbCr':
             nchannel = 3
@@ -133,7 +133,7 @@ class Scale(object):
             ``PIL.Image.BILINEAR``
     """
 
-    def __init__(self, size, interpolation=Image.BILINEAR):
+    def __init__(self, size, interpolation=Image.BICUBIC):
         assert isinstance(size,
                           int) or (isinstance(size, collections.Iterable) and
                                    len(size) == 2)
@@ -238,3 +238,97 @@ class RandomErasing(object):
         self.tl_x = random.random()
         self.tl_y = random.random()
 
+class RandomGrayscaleErasing(object):
+    """ Randomly selects a rectangle region in an image and use grayscale image
+        instead of its pixels.
+        'Local Grayscale Transfomation' by Yunpeng Gong.
+        See https://arxiv.org/pdf/2101.08533.pdf
+    Args:
+         probability: The probability that the Random Grayscale Erasing operation will be performed.
+         sl: Minimum proportion of erased area against input image.
+         sh: Maximum proportion of erased area against input image.
+         r1: Minimum aspect ratio of erased area.
+    """
+
+    def __init__(self, probability: float = 0.2, sl: float = 0.02, sh: float = 0.4, r1: float = 0.3):
+        self.probability = probability
+        self.sl = sl
+        self.sh = sh
+        self.r1 = r1
+
+    def __call__(self, img):
+        """
+        Args:
+            img: after ToTensor() and Normalize([...]), img's type is Tensor
+        """
+        if random.uniform(0, 1) > self.probability:
+            return img
+
+        height, width = img.size()[-2], img.size()[-1]
+        area = height * width
+
+        for _ in range(100):
+
+            target_area = random.uniform(self.sl, self.sh) * area
+            aspect_ratio = random.uniform(self.r1, 1/self.r1)  # height / width
+
+            h = int(round(math.sqrt(target_area * aspect_ratio)))
+            w = int(round(math.sqrt(target_area / aspect_ratio)))
+
+            if w < width and h < height:
+                # tl
+                x = random.randint(0, height - h)
+                y = random.randint(0, width - w)
+                # unbind channel dim
+                r, g, b = img.unbind(dim=-3)
+                # Weighted average method -> grayscale patch
+                l_img = (0.2989 * r + 0.587 * g + 0.114 * b).to(img.dtype)
+                l_img = l_img.unsqueeze(dim=-3)  # rebind channel
+                # erasing
+                img[0, y:y + h, x:x + w] = l_img[0, y:y + h, x:x + w]
+                img[1, y:y + h, x:x + w] = l_img[0, y:y + h, x:x + w]
+                img[2, y:y + h, x:x + w] = l_img[0, y:y + h, x:x + w]
+
+                return img
+
+        return img
+
+class LGT(object):
+
+    def __init__(self, probability=0.2, sl=0.02, sh=0.4, r1=0.3):
+        self.probability = probability
+        self.sl = sl
+        self.sh = sh
+        self.r1 = r1
+
+    def __call__(self, img):
+
+        new = img.convert("L")   # Convert from here to the corresponding grayscale image
+        np_img = np.array(new, dtype=np.uint8)
+        img_gray = np.dstack([np_img, np_img, np_img])
+
+        if random.uniform(0, 1) >= self.probability:
+            return img
+
+        for attempt in range(100):
+            area = img.size[0] * img.size[1]
+            target_area = random.uniform(self.sl, self.sh) * area
+            aspect_ratio = random.uniform(self.r1, 1 / self.r1)
+
+            h = int(round(math.sqrt(target_area * aspect_ratio)))
+            w = int(round(math.sqrt(target_area / aspect_ratio)))
+
+            if w < img.size[1] and h < img.size[0]:
+                x1 = random.randint(0, img.size[0] - h)
+                y1 = random.randint(0, img.size[1] - w)
+                img = np.asarray(img).astype('float')
+
+                img[y1:y1 + h, x1:x1 + w, 0] = img_gray[y1:y1 + h, x1:x1 + w, 0]
+                img[y1:y1 + h, x1:x1 + w, 1] = img_gray[y1:y1 + h, x1:x1 + w, 1]
+                img[y1:y1 + h, x1:x1 + w, 2] = img_gray[y1:y1 + h, x1:x1 + w, 2]
+
+                img = Image.fromarray(img.astype('uint8'))
+
+                return img
+
+        return img

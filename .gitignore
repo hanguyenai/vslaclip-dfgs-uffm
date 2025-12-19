@@ -1,0 +1,103 @@
+# =========================
+# Python cache & artifacts
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+.cache/
+
+# =========================
+# Virtual environments
+# =========================
+venv/
+env/
+.venv/
+conda_env/
+pip-wheel-metadata/
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# =========================
+# Kaggle / Colab
+# =========================
+.kaggle/
+.ipynb_checkpoints/
+*.ipynb
+
+# =========================
+# Logs & runtime files
+# =========================
+logs/
+*.log
+wandb/
+tb_logs/
+tensorboard/
+
+# =========================
+# Training outputs
+# =========================
+output/
+output_original/
+results/
+checkpoints/
+ckpt/
+runs/
+
+# =========================
+# Model weights
+# =========================
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.engine
+*.trt
+*.pkl
+*.npz
+
+# Nếu muốn giữ thư mục nhưng ignore file bên trong:
+# ViFi-weights/*
+# !ViFi-weights/README.md
+
+ViFi-weights/
+
+# =========================
+# Dataset (Rất quan trọng)
+# =========================
+data/
+datasets/
+dataset_transformer/
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# =========================
+# Temporary / intermediate
+# =========================
+tmp/
+temp/
+debug/
+profile/
+
+# =========================
+# CSV / evaluation outputs
+# =========================
+*.csv
+*.xlsx
+
+# =========================
+# System-specific
+# =========================
+Thumbs.db

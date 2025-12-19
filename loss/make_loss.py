@@ -5,6 +5,7 @@
 """
 
 import torch.nn.functional as F
+from .online_label_smooth import OnlineLabelSmoothing
 from .softmax_loss import CrossEntropyLabelSmooth, LabelSmoothingCrossEntropy
 from .triplet_loss import TripletLoss
 from .center_loss import CenterLoss

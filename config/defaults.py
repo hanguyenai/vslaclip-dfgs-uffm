@@ -31,7 +31,8 @@ _C.MODEL.FUSION_LAYER_NUM = 2
 _C.MODEL.ATT_TYPE = ['c2c', 'o2o']  # ['c2c', 'o2o', 'c2o', 'o2c']
 _C.MODEL.ADAPTER_TYPE = 'dat'
 _C.MODEL.ADAPTER_ALPHA = 4
-
+_C.MODEL.USE_SSL = True
+_C.MODEL.SSL_TYPE = 'SIMCLR'
 # Use ImageNet pretrained model to initialize backbone or use self trained model to initialize the whole model
 # Options: 'imagenet' , 'self' , 'finetune'
 _C.MODEL.PRETRAIN_CHOICE = 'imagenet'
@@ -47,12 +48,17 @@ _C.MODEL.TRIPLET_LOSS_WEIGHT = 1.0
 _C.MODEL.I2T_LOSS_WEIGHT = 1.0
 _C.MODEL.T2I_WEIGHT = 1.0
 _C.MODEL.I2T_WEIGHT = 1.0
+_C.MODEL.VIAL_LOSS_WEIGHT = 0.5  # Trọng số của VIAL loss
+_C.MODEL.VIAL_LAMBDA = 0.5      # λ - strength của view-invariant penalty
+_C.MODEL.VIAL_BETA = 5.0        # β - decay rate của exponential penalty
+_C.MODEL.VIAL_MARGIN = 0.5      # M - margin cho hard negative mining
+_C.MODEL.VIAL_TYPE = 'hnm'      # 'basic' hoặc 'hnm'
 
 _C.MODEL.METRIC_LOSS_TYPE = 'triplet'
 # If train with multi-gpu ddp mode, options: 'True', 'False'
 _C.MODEL.DIST_TRAIN = False
 # If train with soft triplet loss, options: 'True', 'False'
-_C.MODEL.NO_MARGIN = False
+_C.MODEL.NO_MARGIN = True
 # If train with label smooth, options: 'on', 'off'
 _C.MODEL.IF_LABELSMOOTH = 'on'
 # If train with arcface loss, options: 'True', 'False'
@@ -94,7 +100,7 @@ _C.MODEL.PBP_PROMPT_DEEP = 9
 _C.MODEL.ENABLE_VCAH = False
 _C.MODEL.ENABLE_QATW = False
 _C.MODEL.VCAH_WEIGHT = 0.05
-_C.MODEL.ENABLE_ATT_POOL = False
+_C.MODEL.ENABLE_ATT_POOL = True
 _C.MODEL.INSTANCE_NORM_NECK = False
 
 # -----------------------------------------------------------------------------
@@ -189,7 +195,11 @@ _C.SOLVER.STAGE1.LOG_PERIOD = 100
 # contain 16 images per batch
 # _C.SOLVER.STAGE1.IMS_PER_BATCH = 64
 _C.SOLVER.STAGE1.EVAL_PERIOD = 10
-
+# SSL_LOSS_WEIGHT is ssl-scale
+_C.SOLVER.STAGE1.SSL_LOSS_WEIGHT = 2.0
+# The scale of prompt augmentation in Stage 1.
+_C.SOLVER.STAGE1.PROMPT_AUG_SCALE = 0.5
+_C.SOLVER.STAGE1.PROMPT_AUG_METHOD = 'mask'
 # ---------------------------------------------------------------------------- #
 # Solver
 # stage1
@@ -247,6 +257,34 @@ _C.SOLVER.STAGE2.EVAL_PERIOD = 10
 # Number of images per batch
 # This is global, so if we have 8 GPUs and IMS_PER_BATCH = 128, each GPU will
 # contain 16 images per batch
+
+# ---------------------------------------------------------------------------- #
+# Solver
+# Stage 3 - DFGS fine-tuning stage
+# ---------------------------------------------------------------------------- #
+_C.SOLVER.STAGE3 = CN()
+_C.SOLVER.STAGE3.IMS_PER_BATCH = 64
+_C.SOLVER.STAGE3.OPTIMIZER_NAME = "Adam"
+_C.SOLVER.STAGE3.MAX_EPOCHS = 30
+_C.SOLVER.STAGE3.BASE_LR = 0.000035
+_C.SOLVER.STAGE3.WARMUP_METHOD = 'linear'
+_C.SOLVER.STAGE3.WARMUP_ITERS = 10
+_C.SOLVER.STAGE3.WARMUP_FACTOR = 0.1
+_C.SOLVER.STAGE3.WEIGHT_DECAY = 0.0001
+_C.SOLVER.STAGE3.WEIGHT_DECAY_BIAS = 0.0001
+_C.SOLVER.STAGE3.GAMMA = 0.1
+_C.SOLVER.STAGE3.STEPS = (15, 25)
+_C.SOLVER.STAGE3.CHECKPOINT_PERIOD = 5
+_C.SOLVER.STAGE3.LOG_PERIOD = 50
+_C.SOLVER.STAGE3.EVAL_PERIOD = 5
+# DFGS parameters
+_C.SOLVER.STAGE3.DFGS_K_NEIGHBORS = 10
+_C.SOLVER.STAGE3.DFGS_M_DIFFICULTY = 2
+_C.SOLVER.STAGE3.DFGS_SHUFFLE = True
+_C.SOLVER.STAGE3.DFGS_UPDATE_EVERY = 5
+_C.SOLVER.STAGE3.DFGS_IMAGE_WEIGHT = 0.7
+_C.SOLVER.STAGE3.DFGS_ATTR_WEIGHT = 0.3
+_C.SOLVER.STAGE3.ATTR_LR = 0.000035
 
 # ---------------------------------------------------------------------------- #
 # TEST

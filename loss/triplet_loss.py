@@ -1,136 +1,208 @@
-from turtle import pd
+# Written by Yixiao Ge
+
 import torch
+import torch.distributed as dist
 from torch import nn
 
-def normalize(x, axis=-1):
-    """Normalizing to unit length along the specified dimension.
-    Args:
-      x: pytorch Variable
-    Returns:
-      x: pytorch Variable, same shape as input
-    """
-    x = 1. * x / (torch.norm(x, 2, axis, keepdim=True).expand_as(x) + 1e-12)
-    return x
+from ...utils.dist_utils import get_dist_info
+
+__all__ = ["TripletLoss", "SoftmaxTripletLoss", "SoftSoftmaxTripletLoss"]
 
 
 def euclidean_dist(x, y):
-    """
-    Args:
-      x: pytorch Variable, with shape [m, d]
-      y: pytorch Variable, with shape [n, d]
-    Returns:
-      dist: pytorch Variable, with shape [m, n]
-    """
     m, n = x.size(0), y.size(0)
-    xx = torch.pow(x, 2).sum(1, keepdim=True).expand(m, n) #B, B
+    xx = torch.pow(x, 2).sum(1, keepdim=True).expand(m, n)
     yy = torch.pow(y, 2).sum(1, keepdim=True).expand(n, m).t()
     dist = xx + yy
-    dist = dist - 2 * torch.matmul(x, y.t())
-    # dist.addmm_(1, -2, x, y.t())
+    dist.addmm_(x, y.t(), beta=1, alpha=-2)
     dist = dist.clamp(min=1e-12).sqrt()  # for numerical stability
     return dist
 
 
 def cosine_dist(x, y):
+    bs1, bs2 = x.size(0), y.size(0)
+    frac_up = torch.matmul(x, y.transpose(0, 1))
+    frac_down = (torch.sqrt(torch.sum(torch.pow(x, 2), 1))).view(bs1, 1).repeat(
+        1, bs2
+    ) * (torch.sqrt(torch.sum(torch.pow(y, 2), 1))).view(1, bs2).repeat(bs1, 1)
+    cosine = frac_up / frac_down
+    return 1 - cosine
+
+
+def _batch_hard(mat_distance, mat_similarity, return_indices=False):
+    # TODO support distributed
+    sorted_mat_distance, positive_indices = torch.sort(
+        mat_distance + (-9999.0) * (1 - mat_similarity), dim=1, descending=True
+    )
+    hard_p = sorted_mat_distance[:, 0]
+    hard_p_indice = positive_indices[:, 0]
+    sorted_mat_distance, negative_indices = torch.sort(
+        mat_distance + (9999.0) * (mat_similarity), dim=1, descending=False
+    )
+    hard_n = sorted_mat_distance[:, 0]
+    hard_n_indice = negative_indices[:, 0]
+    if return_indices:
+        return hard_p, hard_n, hard_p_indice, hard_n_indice
+    return hard_p, hard_n
+
+
+class TripletLoss(nn.Module):
     """
-    Args:
-      x: pytorch Variable, with shape [m, d]
-      y: pytorch Variable, with shape [n, d]
-    Returns:
-      dist: pytorch Variable, with shape [m, n]
-    """
-    m, n = x.size(0), y.size(0)
-    x_norm = torch.pow(x, 2).sum(1, keepdim=True).sqrt().expand(m, n)
-    y_norm = torch.pow(y, 2).sum(1, keepdim=True).sqrt().expand(n, m).t()
-    xy_intersection = torch.mm(x, y.t())
-    dist = xy_intersection/(x_norm * y_norm)
-    dist = (1. - dist) / 2
-    return dist
-
-
-def hard_example_mining(dist_mat, labels, return_inds=False):
-    """For each anchor, find the hardest positive and negative sample.
-    Args:
-      dist_mat: pytorch Variable, pair wise distance between samples, shape [N, N]
-      labels: pytorch LongTensor, with shape [N]
-      return_inds: whether to return the indices. Save time if `False`(?)
-    Returns:
-      dist_ap: pytorch Variable, distance(anchor, positive); shape [N]
-      dist_an: pytorch Variable, distance(anchor, negative); shape [N]
-      p_inds: pytorch LongTensor, with shape [N];
-        indices of selected hard positive samples; 0 <= p_inds[i] <= N - 1
-      n_inds: pytorch LongTensor, with shape [N];
-        indices of selected hard negative samples; 0 <= n_inds[i] <= N - 1
-    NOTE: Only consider the case in which all labels have same num of samples,
-      thus we can cope with all anchors in parallel.
-    """
-    assert len(dist_mat.size()) == 2
-    assert dist_mat.size(0) == dist_mat.size(1)
-    N = dist_mat.size(0)
-
-    # shape [N, N]
-    is_pos = labels.expand(N, N).eq(labels.expand(N, N).t()) 
-    is_neg = labels.expand(N, N).ne(labels.expand(N, N).t())
-
-    # `dist_ap` means distance(anchor, positive)
-    # both `dist_ap` and `relative_p_inds` with shape [N, 1]
-    dist_ap, relative_p_inds = torch.max(
-        dist_mat[is_pos].contiguous().view(N, -1), 1, keepdim=True) 
-    # print(dist_mat[is_pos].shape)
-    # `dist_an` means distance(anchor, negative)
-    # both `dist_an` and `relative_n_inds` with shape [N, 1]
-    dist_an, relative_n_inds = torch.min(
-        dist_mat[is_neg].contiguous().view(N, -1), 1, keepdim=True)
-    # shape [N]
-    dist_ap = dist_ap.squeeze(1)
-    dist_an = dist_an.squeeze(1)
-
-    if return_inds:
-        # shape [N, N]
-        ind = (labels.new().resize_as_(labels)
-               .copy_(torch.arange(0, N).long())
-               .unsqueeze(0).expand(N, N))
-        # shape [N, 1]
-        p_inds = torch.gather(
-            ind[is_pos].contiguous().view(N, -1), 1, relative_p_inds.data)
-        n_inds = torch.gather(
-            ind[is_neg].contiguous().view(N, -1), 1, relative_n_inds.data)
-        # shape [N]
-        p_inds = p_inds.squeeze(1)
-        n_inds = n_inds.squeeze(1)
-        return dist_ap, dist_an, p_inds, n_inds
-
-    return dist_ap, dist_an
-
-
-class TripletLoss(object):
-    """
-    Triplet loss using HARDER example mining,
-    modified based on original triplet loss using hard example mining
+    Compute Triplet loss augmented with Batch Hard
+    Details can be seen in 'In defense of the Triplet Loss for Person Re-Identification'
     """
 
-    def __init__(self, margin=None, hard_factor=0.0):
+    __dist_factory = {
+        "euclidean": euclidean_dist,
+        "cosine": cosine_dist,
+    }
+
+    def __init__(self, margin=0.3, dist_metric="euclidean", triplet_key="pooling"):
+        super(TripletLoss, self).__init__()
         self.margin = margin
-        self.hard_factor = hard_factor
-        if margin is not None:
-            self.ranking_loss = nn.MarginRankingLoss(margin=margin)
+        self.triplet_key = triplet_key
+        self.dist_metric = self.__dist_factory[dist_metric]
+        self.rank, self.world_size, self.dist = get_dist_info()
+
+        self.margin_ranking_loss = nn.MarginRankingLoss(margin=margin)
+        self.logsoftmax = nn.LogSoftmax(dim=1)
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, results, targets):
+
+        emb = results[self.triplet_key]
+
+        if self.dist:
+            all_emb = [torch.empty_like(emb) for _ in range(self.world_size)]
+            dist.all_gather(all_emb, emb)
+            all_emb = torch.cat(all_emb).detach()
+
+            all_targets = [torch.empty_like(targets) for _ in range(self.world_size)]
+            dist.all_gather(all_targets, targets)
+            all_targets = torch.cat(all_targets).detach()
         else:
-            self.ranking_loss = nn.SoftMarginLoss()
+            all_emb = emb.detach()
+            all_targets = targets.detach()
 
-    def __call__(self, global_feat, labels, normalize_feature=False):
-        if normalize_feature:
-            global_feat = normalize(global_feat, axis=-1)
-        dist_mat = euclidean_dist(global_feat, global_feat) #B,B
-        dist_ap, dist_an = hard_example_mining(dist_mat, labels) 
+        # mat_dist = self.dist_metric(emb, emb)
+        mat_dist = self.dist_metric(emb, all_emb)
+        # assert mat_dist.size(0) == mat_dist.size(1)
+        N, M = mat_dist.size()
+        # mat_sim = targets.expand(N, N).eq(targets.expand(N, N).t()).float()
+        mat_sim = (
+            targets.view(N, 1)
+            .expand(N, M)
+            .eq(all_targets.view(M, 1).expand(M, N).t())
+            .float()
+        )
 
-        dist_ap *= (1.0 + self.hard_factor)
-        dist_an *= (1.0 - self.hard_factor)
+        dist_ap, dist_an = _batch_hard(mat_dist, mat_sim)
+        assert dist_an.size(0) == dist_ap.size(0)
+        y = torch.ones_like(dist_ap)
+        # loss = F.margin_ranking_loss(dist_an, dist_ap, y, margin=self.margin)
+        loss = self.margin_ranking_loss(dist_an, dist_ap, y)
+        # prec = (dist_an.data > dist_ap.data).sum() * 1. / y.size(0)
+        return loss
 
-        y = dist_an.new().resize_as_(dist_an).fill_(1) 
-        if self.margin is not None:
-            loss = self.ranking_loss(dist_an, dist_ap, y)
+
+class SoftmaxTripletLoss(TripletLoss):
+    def forward(self, results, targets):
+
+        emb = results[self.triplet_key]
+
+        if self.dist:
+            all_emb = [torch.empty_like(emb) for _ in range(self.world_size)]
+            dist.all_gather(all_emb, emb)
+            all_emb = torch.cat(all_emb).detach()
+
+            all_targets = [torch.empty_like(targets) for _ in range(self.world_size)]
+            dist.all_gather(all_targets, targets)
+            all_targets = torch.cat(all_targets).detach()
         else:
-            loss = self.ranking_loss(dist_an - dist_ap, y)
-        return loss, dist_ap, dist_an
+            all_emb = emb.detach()
+            all_targets = targets.detach()
+
+        # mat_dist = self.dist_metric(emb, emb)
+        # assert (mat_dist.size(0) == mat_dist.size(1)), "debug"
+        mat_dist = self.dist_metric(emb, all_emb)
+        N, M = mat_dist.size()
+        # mat_sim = targets.expand(N, N).eq(targets.expand(N, N).t()).float()
+        mat_sim = (
+            targets.view(N, 1)
+            .expand(N, M)
+            .eq(all_targets.view(M, 1).expand(M, N).t())
+            .float()
+        )
+
+        dist_ap, dist_an, ap_idx, an_idx = _batch_hard(
+            mat_dist, mat_sim, return_indices=True
+        )
+        assert dist_an.size(0) == dist_ap.size(0), "debug"
+        triple_dist = torch.stack((dist_ap, dist_an), dim=1)
+        triple_dist = self.logsoftmax(triple_dist)
+
+        # hard-label softmax triplet loss
+        loss = (
+            -self.margin * triple_dist[:, 0] - (1 - self.margin) * triple_dist[:, 1]
+        ).mean()
+        return loss
 
 
+class SoftSoftmaxTripletLoss(TripletLoss):
+    def forward(self, results, targets, results_mean):
+        assert results_mean is not None
+
+        emb1 = results[self.triplet_key]
+        emb2 = results_mean[self.triplet_key]
+
+        if self.dist:
+            all_emb1 = [torch.empty_like(emb1) for _ in range(self.world_size)]
+            dist.all_gather(all_emb1, emb1)
+            all_emb1 = torch.cat(all_emb1).detach()
+
+            all_emb2 = [torch.empty_like(emb2) for _ in range(self.world_size)]
+            dist.all_gather(all_emb2, emb2)
+            all_emb2 = torch.cat(all_emb2).detach()
+
+            all_targets = [torch.empty_like(targets) for _ in range(self.world_size)]
+            dist.all_gather(all_targets, targets)
+            all_targets = torch.cat(all_targets).detach()
+        else:
+            all_emb1 = emb1.detach()
+            all_emb2 = emb2.detach()
+            all_targets = targets.detach()
+
+        # mat_dist = self.dist_metric(emb1, emb1)
+        # assert (mat_dist.size(0) == mat_dist.size(1)), "debug"
+        mat_dist = self.dist_metric(emb1, all_emb1)
+        N, M = mat_dist.size()
+        # mat_sim = targets.expand(N, N).eq(targets.expand(N, N).t()).float()
+        mat_sim = (
+            targets.view(N, 1)
+            .expand(N, M)
+            .eq(all_targets.view(M, 1).expand(M, N).t())
+            .float()
+        )
+
+        dist_ap, dist_an, ap_idx, an_idx = _batch_hard(
+            mat_dist, mat_sim, return_indices=True
+        )
+        assert dist_an.size(0) == dist_ap.size(0), "debug"
+        triple_dist = torch.stack((dist_ap, dist_an), dim=1)
+        triple_dist = self.logsoftmax(triple_dist)
+
+        # mat_dist_ref = self.dist_metric(emb2, emb2)
+        mat_dist_ref = self.dist_metric(emb2, all_emb2)
+        # dist_ap_ref = torch.gather(mat_dist_ref, 1, ap_idx.view(N,1).expand(N,N))[:,0]
+        # dist_an_ref = torch.gather(mat_dist_ref, 1, an_idx.view(N,1).expand(N,N))[:,0]
+        dist_ap_ref = torch.gather(mat_dist_ref, 1, ap_idx.view(N, 1).expand(N, M))[
+            :, 0
+        ]
+        dist_an_ref = torch.gather(mat_dist_ref, 1, an_idx.view(N, 1).expand(N, M))[
+            :, 0
+        ]
+        triple_dist_ref = torch.stack((dist_ap_ref, dist_an_ref), dim=1)
+        triple_dist_ref = self.softmax(triple_dist_ref).detach()
+        # soft-label softmax triplet loss
+        loss = (-triple_dist_ref * triple_dist).mean(0).sum()
+        return loss
