@@ -1,12 +1,12 @@
 """
-Comprehensive evaluation script for AG-VPReID dataset with AMC and CFFM
+Comprehensive evaluation script for AG-VPReID dataset with AMC and UFFM
 Evaluates the model on all three cases:
 - Case 1: Aerial to Ground
 - Case 2: Ground to Aerial
 - Case 3: Aerial to Aerial
 
 Enhanced inference techniques from paper:
-- CFFM (Certain Feature Fusion Method): KNN-based gallery feature refinement
+- UFFM (Uncertainty Feature Fusion Method): KNN-based gallery feature refinement
 - CCE (Camera Consistency Encoding): Camera-aware similarity
 - AMC (Auto-weighted Measure Combination): Weighted combination of multiple similarities
   S* = α·S(q, gj) + β·S(q, URFj) + γ·CCE(q, gj)
@@ -34,11 +34,11 @@ from utils.test_video_reid import _feats_of_loader, extract_feat_sampled_frames
 
 
 # =============================================================================
-# CFFM: Certain Feature Fusion Method (Uncertainty Feature Fusion)
+# UFFM: Uncertainty Feature Fusion Method
 # =============================================================================
-class CFFM:
+class UFFM:
     """
-    Certain Feature Fusion Method (CFFM) / Uncertainty Feature Fusion
+    Uncertainty Feature Fusion Method (UFFM)
     
     For each gallery feature, find its K nearest neighbors in the gallery
     and fuse them to create Uncertainty-Refined Features (URF).
@@ -142,7 +142,7 @@ class CFFM:
     
     def __call__(self, gallery_features):
         """
-        Apply CFFM to gallery features.
+        Apply UFFM to gallery features.
         
         Args:
             gallery_features: (N, D) tensor
@@ -348,13 +348,13 @@ def evaluate_metrics(distmat, q_pids, g_pids, q_camids, g_camids):
 
 
 # =============================================================================
-# Main Evaluation Function with AMC + CFFM
+# Main Evaluation Function with AMC + UFFM
 # =============================================================================
 def evaluate_case_amc(cfg, model, case_name, case_subset, use_gpu=True,
-                      cffm_k=5, cffm_fusion='weighted_mean', cffm_temperature=0.1,
+                      uffm_k=5, uffm_fusion='weighted_mean', uffm_temperature=0.1,
                       alpha=0.4, beta=0.4, gamma=0.2, batch_size=4):
     """
-    Evaluate model on a specific case with AMC and CFFM.
+    Evaluate model on a specific case with AMC and UFFM.
     
     Args:
         cfg: Configuration object
@@ -362,9 +362,9 @@ def evaluate_case_amc(cfg, model, case_name, case_subset, use_gpu=True,
         case_name: Name of the case
         case_subset: Subset identifier
         use_gpu: Whether to use GPU
-        cffm_k: Number of neighbors for CFFM
-        cffm_fusion: Fusion method for CFFM
-        cffm_temperature: Temperature for weighted fusion
+        uffm_k: Number of neighbors for UFFM
+        uffm_fusion: Fusion method for UFFM
+        uffm_temperature: Temperature for weighted fusion
         alpha: Weight for S(q, gj) in AMC
         beta: Weight for S(q, URFj) in AMC
         gamma: Weight for CCE in AMC
@@ -372,7 +372,7 @@ def evaluate_case_amc(cfg, model, case_name, case_subset, use_gpu=True,
     """
     print_section(f"Evaluating {case_name}")
     print(f"Subset: {case_subset}")
-    print(f"CFFM: k={cffm_k}, fusion={cffm_fusion}, temp={cffm_temperature}")
+    print(f"UFFM: k={uffm_k}, fusion={uffm_fusion}, temp={uffm_temperature}")
     print(f"AMC weights: α={alpha:.2f}, β={beta:.2f}, γ={gamma:.2f}")
     
     # Load dataset
@@ -465,10 +465,10 @@ def evaluate_case_amc(cfg, model, case_name, case_subset, use_gpu=True,
     q_camids_sorted = np.array([dataset.query[i][2] for i in query_sorted_indices])
     g_camids_sorted = np.array([dataset.gallery[i][2] for i in gallery_sorted_indices])
     
-    # Apply CFFM to gallery features
-    print("\nApplying CFFM (Uncertainty Feature Fusion)...")
-    cffm = CFFM(k=cffm_k, fusion_method=cffm_fusion, temperature=cffm_temperature)
-    gallery_urf = cffm(gf_sorted)
+    # Apply UFFM to gallery features
+    print("\nApplying UFFM (Uncertainty Feature Fusion)...")
+    uffm = UFFM(k=uffm_k, fusion_method=uffm_fusion, temperature=uffm_temperature)
+    gallery_urf = uffm(gf_sorted)
     print(f"Gallery URF features: {gallery_urf.shape}")
     
     # Apply AMC for final similarity
@@ -599,7 +599,7 @@ def generate_ranking_csv(results, output_path='evaluation_rankings.csv'):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AG-VPReID Evaluation with AMC + CFFM")
+    parser = argparse.ArgumentParser(description="AG-VPReID Evaluation with AMC + UFFM")
     parser.add_argument(
         "--config_file",
         default="configs/adapter/vit_adapter.yml",
@@ -624,24 +624,24 @@ def main():
         help="path to save evaluation results (optional)",
         type=str
     )
-    # CFFM parameters
+    # UFFM parameters
     parser.add_argument(
-        "--cffm_k",
+        "--uffm_k",
         default=12,
-        help="Number of neighbors for CFFM (default: 5)",
+        help="Number of neighbors for UFFM (default: 5)",
         type=int
     )
     parser.add_argument(
-        "--cffm_fusion",
+        "--uffm_fusion",
         default="weighted_mean",
         choices=["mean", "weighted_mean", "self_and_neighbors"],
-        help="Fusion method for CFFM",
+        help="Fusion method for UFFM",
         type=str
     )
     parser.add_argument(
-        "--cffm_temperature",
+        "--uffm_temperature",
         default=0.2,
-        help="Temperature for CFFM weighted fusion (default: 0.1)",
+        help="Temperature for UFFM weighted fusion (default: 0.1)",
         type=float
     )
     # AMC parameters
@@ -693,14 +693,14 @@ def main():
     else:
         print("CUDA not available, using CPU")
     
-    print_header("AG-VPReID Evaluation with AMC + CFFM")
+    print_header("AG-VPReID Evaluation with AMC + UFFM")
     print(f"Config file: {args.config_file}")
     print(f"Model path: {args.model_path}")
     print(f"Dataset root: {cfg.DATASETS.ROOT_DIR}")
-    print(f"\nCFFM settings:")
-    print(f"  K (neighbors): {args.cffm_k}")
-    print(f"  Fusion method: {args.cffm_fusion}")
-    print(f"  Temperature: {args.cffm_temperature}")
+    print(f"\nUFFM settings:")
+    print(f"  K (neighbors): {args.uffm_k}")
+    print(f"  Fusion method: {args.uffm_fusion}")
+    print(f"  Temperature: {args.uffm_temperature}")
     print(f"\nAMC settings:")
     print(f"  α (direct similarity): {args.alpha}")
     print(f"  β (URF similarity): {args.beta}")
@@ -772,9 +772,9 @@ def main():
                 case_info['name'],
                 case_info['subset'],
                 use_gpu=use_gpu,
-                cffm_k=args.cffm_k,
-                cffm_fusion=args.cffm_fusion,
-                cffm_temperature=args.cffm_temperature,
+                uffm_k=args.uffm_k,
+                uffm_fusion=args.uffm_fusion,
+                uffm_temperature=args.uffm_temperature,
                 alpha=args.alpha,
                 beta=args.beta,
                 gamma=args.gamma,
@@ -806,9 +806,9 @@ def main():
                 'config_file': args.config_file,
                 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
                 'settings': {
-                    'cffm_k': args.cffm_k,
-                    'cffm_fusion': args.cffm_fusion,
-                    'cffm_temperature': args.cffm_temperature,
+                    'uffm_k': args.uffm_k,
+                    'uffm_fusion': args.uffm_fusion,
+                    'uffm_temperature': args.uffm_temperature,
                     'alpha': args.alpha,
                     'beta': args.beta,
                     'gamma': args.gamma

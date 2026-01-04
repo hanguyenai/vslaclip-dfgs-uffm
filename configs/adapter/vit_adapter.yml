@@ -84,7 +84,7 @@ SOLVER:
         GAMMA: 0.1
 
     STAGE3:
-        IMS_PER_BATCH: 8
+        IMS_PER_BATCH: 16
         OPTIMIZER_NAME: "Adam"
         BASE_LR: 0.00001
         MAX_EPOCHS: 30
