@@ -1,12 +1,3 @@
-"""
-Run all configs for 47 submissions budget (36 configs + 11 reserve)
-Fixed: cffm_k = 12
-
-Now supports:
-- --start N        : start from config index N (0-based), e.g. --start 12 to start at c12
-- --submit-only    : only submit existing CSVs, don't run evaluation
-"""
-
 import subprocess
 import time
 import os
@@ -24,7 +15,7 @@ OUTPUT_DIR = "output"
 DELAY_BETWEEN_SUBMIT = 3  # seconds
 
 # Fixed param
-CFFM_K = 12
+UFFM_K = 12
 
 # ============================================
 # PARAMETER GRID (36 configs)
@@ -38,14 +29,14 @@ TEMPERATURES = [0.03, 0.05, 0.1, 0.2, 0.5]
 
 # AMC weight combinations (alpha, beta, gamma) - will be normalized
 AMC_WEIGHTS = [
-    (0.5, 0.4, 0.1),   # Direct heavy
-    (0.4, 0.5, 0.1),   # URF heavy
-    (0.4, 0.4, 0.2),   # Balanced with CCE
-    (0.5, 0.3, 0.2),   # Direct + CCE
-    (0.3, 0.5, 0.2),   # URF + CCE
-    (0.35, 0.35, 0.3), # High CCE
-    (0.45, 0.45, 0.1), # Low CCE
-    (0.6, 0.3, 0.1),   # Very direct heavy
+    (0.5, 0.4, 0.1),  
+    (0.4, 0.5, 0.1),   
+    (0.4, 0.4, 0.2),  
+    (0.5, 0.3, 0.2),   
+    (0.3, 0.5, 0.2),   
+    (0.35, 0.35, 0.3), 
+    (0.45, 0.45, 0.1), 
+    (0.6, 0.3, 0.1),   
 ]
 
 # ============================================
@@ -76,9 +67,9 @@ def generate_configs():
                 
                 configs.append({
                     "id": f"c{idx:02d}",
-                    "cffm_k": CFFM_K,
-                    "cffm_fusion": fusion,
-                    "cffm_temperature": temp,
+                    "uffm_k": UFFM_K,
+                    "uffm_fusion": fusion,
+                    "uffm_temperature": temp,
                     "alpha": round(a, 3),
                     "beta": round(b, 3),
                     "gamma": round(g, 3),
@@ -100,10 +91,10 @@ def generate_configs_simple():
     fusions = ["weighted_mean", "self_and_neighbors", "mean"]
     temps = [0.05, 0.1, 0.2, 0.5]
     amcs = [
-        (0.5, 0.4, 0.1),   # Direct heavy
-        (0.4, 0.5, 0.1),   # URF heavy  
-        (0.4, 0.4, 0.2),   # Balanced
-    ]
+        (0.5, 0.4, 0.1),   
+        (0.4, 0.5, 0.1),   
+        (0.4, 0.4, 0.2),
+    ] # Added closing bracket fixed from original snippet
     
     for fusion in fusions:
         for temp in temps:
@@ -111,9 +102,9 @@ def generate_configs_simple():
                 total = alpha + beta + gamma
                 configs.append({
                     "id": f"c{idx:02d}",
-                    "cffm_k": CFFM_K,
-                    "cffm_fusion": fusion,
-                    "cffm_temperature": temp,
+                    "uffm_k": UFFM_K,
+                    "uffm_fusion": fusion,
+                    "uffm_temperature": temp,
                     "alpha": round(alpha/total, 3),
                     "beta": round(beta/total, 3),
                     "gamma": round(gamma/total, 3),
@@ -133,27 +124,27 @@ def run_evaluation(config):
     cid = config["id"]
     
     cmd = [
-        "python", "evaluate_all_cases_amc.py",
+        "python", "evaluate_uffm_amc.py",
         "--config_file", CONFIG_FILE,
         "--model_path", MODEL_PATH,
         "--cases", "1,2,3",
-        "--cffm_k", str(config["cffm_k"]),
-        "--cffm_fusion", config["cffm_fusion"],
-        "--cffm_temperature", str(config["cffm_temperature"]),
+        "--uffm_k", str(config["uffm_k"]),
+        "--uffm_fusion", config["uffm_fusion"],
+        "--uffm_temperature", str(config["uffm_temperature"]),
         "--alpha", str(config["alpha"]),
         "--beta", str(config["beta"]),
         "--gamma", str(config["gamma"]),
     ]
     
-    print(f"\n[{cid}] Running: k={config['cffm_k']}, {config['cffm_fusion']}, "
-          f"t={config['cffm_temperature']}, "
+    print(f"\n[{cid}] Running: k={config['uffm_k']}, {config['uffm_fusion']}, "
+          f"t={config['uffm_temperature']}, "
           f"α={config['alpha']}, β={config['beta']}, γ={config['gamma']}")
     
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         
         # Rename output file
-        default_csv = f"{OUTPUT_DIR}/evaluation_rankings_amc_epoch60.csv"
+        default_csv = f"{OUTPUT_DIR}/evaluation_rankings_amc_epoch60_bicubic.csv" # Check if this filename matches evaluate_uffm_amc.py output
         new_csv = f"{OUTPUT_DIR}/{cid}.csv"
         
         if os.path.exists(default_csv):
@@ -162,6 +153,12 @@ def run_evaluation(config):
             return new_csv
         else:
             print(f"    ✗ Output not found: {default_csv}")
+            # Fallback check for alternate filename if needed
+            alt_csv = f"{OUTPUT_DIR}/evaluation_rankings_amc_epoch60.csv"
+            if os.path.exists(alt_csv):
+                 os.rename(alt_csv, new_csv)
+                 print(f"    ✓ Saved (from alt): {new_csv}")
+                 return new_csv
             return None
             
     except subprocess.CalledProcessError as e:
@@ -175,9 +172,9 @@ def submit_to_kaggle(config, csv_path):
     cid = config["id"]
     
     # Short message for tracking
-    msg = (f"{cid}_k{config['cffm_k']}_"
-           f"{config['cffm_fusion'][:2]}_"
-           f"t{config['cffm_temperature']}_"
+    msg = (f"{cid}_k{config['uffm_k']}_"
+           f"{config['uffm_fusion'][:2]}_"
+           f"t{config['uffm_temperature']}_"
            f"a{config['alpha']}b{config['beta']}g{config['gamma']}")
     
     cmd = [
@@ -282,7 +279,7 @@ def run_all(auto_submit=True, use_simple_grid=True, start_idx=0):
                 f"Ran: {num_to_run}, Submitted: {submitted}\n\n")
         for r in results:
             c = r["config"]
-            f.write(f"{r['id']}: {c['cffm_fusion']}, t={c['cffm_temperature']}, "
+            f.write(f"{r['id']}: {c['uffm_fusion']}, t={c['uffm_temperature']}, "
                     f"α={c['alpha']}, β={c['beta']}, γ={c['gamma']} "
                     f"-> {'✓' if r['submitted'] else '✗'}\n")
     
@@ -294,7 +291,7 @@ def run_all(auto_submit=True, use_simple_grid=True, start_idx=0):
 def submit_only(use_simple_grid=True, start_idx=0):
     """
     Only submit existing CSVs for configs from start_idx.
-    Không chạy lại evaluate_all_cases_amc.py.
+    Không chạy lại evaluate_uffm_amc.py.
     """
     # Generate configs
     if use_simple_grid:
@@ -327,7 +324,7 @@ def submit_only(use_simple_grid=True, start_idx=0):
         
         print(f"\n{'='*60}")
         print(f"[SUBMIT ONLY] Progress: {i - start_idx + 1}/{num_to_run}  (global index {i}/{total_configs-1})")
-        print(f"Config: {cid}  fusion={config['cffm_fusion']}, t={config['cffm_temperature']}, "
+        print(f"Config: {cid}  fusion={config['uffm_fusion']}, t={config['uffm_temperature']}, "
               f"α={config['alpha']}, β={config['beta']}, γ={config['gamma']}")
         
         if not os.path.exists(csv_path):
@@ -388,9 +385,7 @@ if __name__ == "__main__":
     # Update model path
     MODEL_PATH = args.model_path
     
-    # MODE 1: submit-only
     if args.submit_only:
-        # Nếu muốn, có thể kết hợp với --dry-run (in ra list sẽ submit, không gửi thật)
         if args.dry_run:
             configs = generate_configs_simple() if not args.full_grid else generate_configs()
             total = len(configs)
@@ -400,15 +395,14 @@ if __name__ == "__main__":
             for c in configs[args.start:]:
                 cid = c["id"]
                 csv_path = os.path.join(OUTPUT_DIR, f"{cid}.csv")
-                print(f"  {cid}: csv={csv_path}, fusion={c['cffm_fusion']}, "
-                      f"temp={c['cffm_temperature']}, α={c['alpha']}, β={c['beta']}, γ={c['gamma']}")
+                print(f"  {cid}: csv={csv_path}, fusion={c['uffm_fusion']}, "
+                      f"temp={c['uffm_temperature']}, α={c['alpha']}, β={c['beta']}, γ={c['gamma']}")
         else:
             submit_only(
                 use_simple_grid=not args.full_grid,
                 start_idx=args.start,
             )
     
-    # MODE 2: dry-run (chỉ in config, không chạy, không submit)
     elif args.dry_run:
         configs = generate_configs_simple() if not args.full_grid else generate_configs()
         total = len(configs)
@@ -418,10 +412,8 @@ if __name__ == "__main__":
         
         print(f"Would run {total - args.start} configs (from index {args.start} to {total-1}):\n")
         for c in configs[args.start:]:
-            print(f"  {c['id']}: fusion={c['cffm_fusion']}, temp={c['cffm_temperature']}, "
+            print(f"  {c['id']}: fusion={c['uffm_fusion']}, temp={c['uffm_temperature']}, "
                   f"α={c['alpha']}, β={c['beta']}, γ={c['gamma']}")
-    
-    # MODE 3: bình thường – chạy eval (+ optional submit)
     else:
         run_all(
             auto_submit=not args.no_submit,
