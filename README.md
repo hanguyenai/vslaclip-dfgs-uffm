@@ -7,7 +7,7 @@ Our method is built upon the **VSLA-CLIP** framework and further extended with *
 
 ## 📌 Overview
 
-To address these challenges, our approach extends **VSLA-CLIP** with improved sampling and training strategies designed for **extreme-distance video re-identification**.
+To address these challenges, our approach extends VSLA-CLIP with an additional Stage-3 training scheme using the DFGS sampler, together with an improved inference design that combines UFFM, CCE, and MC for extreme-distance video re-identification.
 
 ![Overview of the proposed framework](assets/image.png)
 
