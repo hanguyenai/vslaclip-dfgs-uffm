@@ -9,7 +9,7 @@ Our method is built upon the **VSLA-CLIP** framework and further extended with *
 
 To address these challenges, our approach extends **VSLA-CLIP** with improved sampling and training strategies designed for **extreme-distance video re-identification**.
 
-![Overview of the proposed framework](image.png)
+![Overview of the proposed framework](assets/image.png)
 
 ---
 
