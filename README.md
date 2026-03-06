@@ -11,18 +11,6 @@ The official VReID-XFD workshop is part of **WACV 2026** and includes a **compet
 To address these challenges, our approach extends **VSLA-CLIP** with improved sampling and training strategies designed for **extreme-distance video re-identification**.
 
 ![Overview of the proposed framework](image.png)
-
----
-
-## Main Features
-
-- Built on top of **VSLA-CLIP**
-- Supports training and evaluation on the **DetReIDX** dataset
-- Includes **DFGS sampler** for hard sample mining
-- Uses a **stage-wise training pipeline**
-- Supports evaluation across multiple cross-view test cases
-- Produces submission-ready ranking files
-
 ---
 
 ## Environment Setup
@@ -47,7 +35,7 @@ CUDA_VISIBLE_DEVICES=0 python train_reidadapter.py --config_file configs/adapter
 ### Stage 3 Training
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python train_reidadapter_stage3.py --config_file configs/adapter/vit_adapter.yml
+CUDA_VISIBLE_DEVICES=0 python train_reidadapter_stage3.py --stage2_weight output_original/VSLACLIP/ViT-B-16_60.pth
 ```
 
 Please update dataset paths and related settings in the configuration file before training.
@@ -61,7 +49,7 @@ To evaluate all supported cases with the AMC-based evaluation script, run:
 ```bash
 CUDA_VISIBLE_DEVICES=0 python evaluate_all_cases_amc.py \
   --config_file configs/adapter/vit_adapter.yml \
-  --model_path logs/ViT-B-16_5.pth
+  --model_path output_original/VSLACLIPv4/ViT-B-16_stage3_final.pth
 ```
 
 After evaluation, ranking results will be saved for challenge submission and further analysis.
@@ -71,27 +59,6 @@ After evaluation, ranking results will be saved for challenge submission and fur
 ## Dataset
 
 This project is developed for experiments on the **DetReIDX** dataset, which is designed for **video-based human recognition at extreme far distances**.
-
----
-
-## Hardware Requirements
-
-- Verified on **NVIDIA A100 GPUs**
-- Other CUDA-capable GPUs can also be used
-- At least **16 GB GPU memory** is recommended for stable training
-
----
-
-## Method
-
-Our solution is based on the **VSLA-CLIP** framework and further improved with:
-
-- **DFGS-based hard sample mining** for more informative training batches
-- a **multi-stage training strategy**
-- an **AMC-based evaluation pipeline**
-- adaptation for **extreme-distance video re-identification** under challenging cross-view settings
-
-More implementation details can be found in the codebase and the corresponding workshop paper.
 
 ---
 
