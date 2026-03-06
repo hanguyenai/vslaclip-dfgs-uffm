@@ -54,12 +54,6 @@ After evaluation, ranking results will be saved for challenge submission and fur
 
 ---
 
-## 📂 Dataset
-
-This project is developed for experiments on the **DetReIDX** dataset, which is designed for **video-based human recognition at extreme far distances**.
-
----
-
 ## 🎓 Workshop / Challenge Information
 
 **Workshop:** VReID-XFD: Video-based Human Recognition at Extreme Far Distances  
